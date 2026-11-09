@@ -1,0 +1,22 @@
+cmake_minimum_required(VERSION 3.16)
+
+project(c01_aes_ctr C)
+
+set(CMAKE_C_STANDARD 17)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
+
+find_package(OpenSSL 3.0 REQUIRED COMPONENTS Crypto)
+
+add_library(c01_ctr
+    src/crypto/ctr_openssl.c
+)
+target_include_directories(c01_ctr PUBLIC include)
+target_link_libraries(c01_ctr PUBLIC OpenSSL::Crypto)
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(test_ctr tests/test_ctr.c)
+    target_link_libraries(test_ctr PRIVATE c01_ctr)
+    add_test(NAME ctr_vectors COMMAND test_ctr)
+endif()
