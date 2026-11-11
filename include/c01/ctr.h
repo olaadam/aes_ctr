@@ -26,6 +26,14 @@ c01_ctr_status c01_aes128_ctr_transform(
     unsigned char *output,
     size_t length);
 
+/* Równoległy CTR: OpenMP rozdziela bloki, OpenSSL AES-ECB szyfruje liczniki. */
+c01_ctr_status c01_aes128_ctr_transform_omp(
+    const unsigned char key[C01_AES128_KEY_SIZE],
+    const unsigned char initial_counter[C01_AES_BLOCK_SIZE],
+    const unsigned char *input,
+    unsigned char *output,
+    size_t length);
+
 const char *c01_ctr_status_string(c01_ctr_status status);
 
 #endif

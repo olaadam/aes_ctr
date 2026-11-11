@@ -7,12 +7,13 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
 find_package(OpenSSL 3.0 REQUIRED COMPONENTS Crypto)
+find_package(OpenMP REQUIRED COMPONENTS C)
 
 add_library(c01_ctr
     src/crypto/ctr_openssl.c
 )
 target_include_directories(c01_ctr PUBLIC include)
-target_link_libraries(c01_ctr PUBLIC OpenSSL::Crypto)
+target_link_libraries(c01_ctr PUBLIC OpenSSL::Crypto OpenMP::OpenMP_C)
 
 include(CTest)
 if(BUILD_TESTING)

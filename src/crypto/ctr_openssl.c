@@ -2,6 +2,7 @@
 
 #include <limits.h>
 #include <stdint.h>
+#include <omp.h>
 
 #include <openssl/evp.h>
 
@@ -29,6 +30,65 @@ static int counter_range_fits(
     }
 
     return addend == 0;
+}
+
+static void counter_at(
+    const unsigned char initial[C01_AES_BLOCK_SIZE], size_t block,
+    unsigned char result[C01_AES_BLOCK_SIZE])
+{
+    size_t carry = block;
+    int i;
+    for (i = 0; i < C01_AES_BLOCK_SIZE; ++i) result[i] = initial[i];
+    for (i = C01_AES_BLOCK_SIZE - 1; i >= 0 && carry != 0; --i) {
+        size_t sum = (size_t)result[i] + (carry & 0xffu);
+        result[i] = (unsigned char)sum;
+        carry = (carry >> 8) + (sum >> 8);
+    }
+}
+
+c01_ctr_status c01_aes128_ctr_transform_omp(
+    const unsigned char key[C01_AES128_KEY_SIZE],
+    const unsigned char initial_counter[C01_AES_BLOCK_SIZE],
+    const unsigned char *input, unsigned char *output, size_t length)
+{
+    size_t blocks, block;
+    int failed = 0;
+
+    if (key == NULL || initial_counter == NULL ||
+        (length != 0 && (input == NULL || output == NULL)))
+        return C01_CTR_INVALID_ARGUMENT;
+    blocks = length / C01_AES_BLOCK_SIZE + (length % C01_AES_BLOCK_SIZE != 0);
+    if (!counter_range_fits(initial_counter, blocks)) return C01_CTR_COUNTER_OVERFLOW;
+    if (length == 0) return C01_CTR_OK;
+
+    #pragma omp parallel reduction(|:failed)
+    {
+        EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+        int local_failed = ctx == NULL;
+        if (!local_failed && EVP_EncryptInit_ex(ctx, EVP_aes_128_ecb(), NULL, key, NULL) != 1)
+            local_failed = 1;
+        if (!local_failed && EVP_CIPHER_CTX_set_padding(ctx, 0) != 1) local_failed = 1;
+
+        #pragma omp for schedule(static)
+        for (block = 0; block < blocks; ++block) {
+            unsigned char ctr[16], stream[EVP_MAX_BLOCK_LENGTH];
+            int written = 0;
+            size_t offset = block * C01_AES_BLOCK_SIZE;
+            size_t count = length - offset < C01_AES_BLOCK_SIZE
+                               ? length - offset : C01_AES_BLOCK_SIZE;
+            size_t i;
+            if (local_failed) continue;
+            counter_at(initial_counter, block, ctr);
+            if (EVP_EncryptUpdate(ctx, stream, &written, ctr, 16) != 1 || written != 16) {
+                local_failed = 1;
+                continue;
+            }
+            for (i = 0; i < count; ++i) output[offset + i] = input[offset + i] ^ stream[i];
+        }
+        failed |= local_failed;
+        EVP_CIPHER_CTX_free(ctx);
+    }
+    return failed ? C01_CTR_CRYPTO_ERROR : C01_CTR_OK;
 }
 
 c01_ctr_status c01_aes128_ctr_transform(
