@@ -29,4 +29,10 @@ if(C01_ENABLE_GPU)
     target_link_libraries(c01_gpu PUBLIC OpenCL::OpenCL)
     target_compile_definitions(c01_gpu PRIVATE
         C01_GPU_KERNEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/backends/aes_ctr.cl")
+
+    if(BUILD_TESTING)
+        add_executable(test_gpu tests/test_gpu.c)
+        target_link_libraries(test_gpu PRIVATE c01_gpu c01_ctr)
+        add_test(NAME gpu_vectors COMMAND test_gpu)
+    endif()
 endif()
