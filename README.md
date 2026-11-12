@@ -17,7 +17,6 @@ ctest --test-dir build --output-on-failure
 - `include/c01/` — publiczne interfejsy C
 - `src/crypto/` — backend kryptograficzny
 - `tests/` — testy wektorów i zachowania granicznego
-- `docs/architecture.md` — architektura, metryki i kolejne etapy
 
 Transformacja używa tej samej operacji do szyfrowania i odszyfrowywania.
 Klucz testowy i licznik są przekazywane w pamięci.
