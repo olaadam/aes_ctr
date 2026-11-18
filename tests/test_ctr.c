@@ -89,6 +89,23 @@ static int test_partial_block_and_counter_overflow(void)
     return c01_aes128_ctr_transform(key, counter, NULL, NULL, 0) == C01_CTR_OK;
 }
 
+static int test_openmp_matches_serial(void)
+{
+    unsigned char key[16], counter[16], input[4099], serial[4099], parallel[4099];
+    size_t i;
+    if (!from_hex("2b7e151628aed2a6abf7158809cf4f3c", key, sizeof(key)) ||
+        !from_hex("f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff", counter, sizeof(counter)))
+        return 0;
+    for (i = 0; i < sizeof(input); ++i) input[i] = (unsigned char)(i * 37u + 11u);
+    if (c01_aes128_ctr_transform(key, counter, input, serial, sizeof(input)) != C01_CTR_OK ||
+        c01_aes128_ctr_transform_omp(key, counter, input, parallel, sizeof(input)) != C01_CTR_OK ||
+        memcmp(serial, parallel, sizeof(serial)) != 0)
+        return 0;
+    return c01_aes128_ctr_transform_omp(key, counter, parallel, parallel, sizeof(parallel)) == C01_CTR_OK &&
+           c01_aes128_ctr_transform(key, counter, parallel, serial, sizeof(serial)) == C01_CTR_OK &&
+           memcmp(serial, input, sizeof(input)) == 0;
+}
+
 int main(void)
 {
     if (!test_nist_vector()) {
@@ -97,6 +114,10 @@ int main(void)
     }
     if (!test_partial_block_and_counter_overflow()) {
         fprintf(stderr, "partial-block, empty-input, or counter-range test failed\n");
+        return 1;
+    }
+    if (!test_openmp_matches_serial()) {
+        fprintf(stderr, "OpenMP AES-128-CTR comparison or round-trip test failed\n");
         return 1;
     }
 
