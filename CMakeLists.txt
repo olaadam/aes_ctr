@@ -21,3 +21,22 @@ if(BUILD_TESTING)
     target_link_libraries(test_ctr PRIVATE c01_ctr)
     add_test(NAME ctr_vectors COMMAND test_ctr)
 endif()
+
+option(C01_ENABLE_GPU "Backend GPU (OpenCL)" ON)
+if(C01_ENABLE_GPU)
+    find_package(OpenCL REQUIRED)
+    add_library(c01_gpu src/backends/gpu_opencl.c)
+    target_include_directories(c01_gpu PUBLIC include)
+    target_link_libraries(c01_gpu PUBLIC OpenCL::OpenCL)
+    target_compile_definitions(c01_gpu PRIVATE
+        C01_GPU_KERNEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/backends/aes_ctr.cl")
+
+    add_executable(bench_gpu bench/bench_gpu.c)
+    target_link_libraries(bench_gpu PRIVATE c01_gpu c01_ctr)
+
+    if(BUILD_TESTING)
+        add_executable(test_gpu tests/test_gpu.c)
+        target_link_libraries(test_gpu PRIVATE c01_gpu c01_ctr)
+        add_test(NAME gpu_vectors COMMAND test_gpu)
+    endif()
+endif()
