@@ -15,6 +15,9 @@ add_library(c01_ctr
 target_include_directories(c01_ctr PUBLIC include)
 target_link_libraries(c01_ctr PUBLIC OpenSSL::Crypto OpenMP::OpenMP_C)
 
+add_executable(aesctr src/cli/aesctr.c)
+target_link_libraries(aesctr PRIVATE c01_ctr)
+
 include(CTest)
 if(BUILD_TESTING)
     add_executable(test_ctr tests/test_ctr.c)
@@ -22,7 +25,7 @@ if(BUILD_TESTING)
     add_test(NAME ctr_vectors COMMAND test_ctr)
 endif()
 
-option(C01_ENABLE_GPU "Backend GPU (OpenCL)" ON)
+option(C01_ENABLE_GPU "Backend GPU (OpenCL)" OFF)
 if(C01_ENABLE_GPU)
     find_package(OpenCL REQUIRED)
     add_library(c01_gpu src/backends/gpu_opencl.c)

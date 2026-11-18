@@ -1,4 +1,5 @@
 #include "c01/ctr.h"
+#include "aes_ctr.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -154,6 +155,18 @@ c01_ctr_status c01_aes128_ctr_transform(
 cleanup:
     EVP_CIPHER_CTX_free(context);
     return status;
+}
+
+c01_ctr_status ctr_process(const uint8_t *in, uint8_t *out, size_t len,
+                           const ctr_counter ctr0, const uint8_t *key)
+{
+    return c01_aes128_ctr_transform(key, ctr0, in, out, len);
+}
+
+c01_ctr_status ctr_process_omp(const uint8_t *in, uint8_t *out, size_t len,
+                               const ctr_counter ctr0, const uint8_t *key)
+{
+    return c01_aes128_ctr_transform_omp(key, ctr0, in, out, len);
 }
 
 const char *c01_ctr_status_string(c01_ctr_status status)
