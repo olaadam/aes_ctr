@@ -9,10 +9,28 @@ cmake -S . -B build -DC01_ENABLE_GPU=OFF
 cmake --build build --config Release
 ```
 
-Wariant MPI wymaga implementacji MPI dostępnej dla C i `mpiexec`:
+Wariant MPI wymaga implementacji MPI dostępnej dla C i `mpiexec`. Dla OpenMPI
+lub MPICH można zacząć od:
 
 ```powershell
 cmake -S . -B build-mpi -DC01_ENABLE_GPU=OFF -DC01_ENABLE_MPI=ON
+cmake --build build-mpi --config Release
+```
+
+W Windows z MS-MPI CMake może nie wykryć SDK automatycznie. Wtedy wskaż
+bezpośrednio nagłówek, bibliotekę i launcher (dopasuj ścieżki do instalacji):
+
+```powershell
+$mpiInclude = 'C:\Program Files (x86)\Microsoft SDKs\MPI\Include'
+$mpiLibrary = 'C:\Program Files (x86)\Microsoft SDKs\MPI\Lib\x64\msmpi.lib'
+$mpiExec = 'C:\Program Files\Microsoft MPI\Bin\mpiexec.exe'
+
+cmake -S . -B build-mpi -G 'Visual Studio 17 2022' -A x64 `
+  -DC01_ENABLE_GPU=OFF -DC01_ENABLE_MPI=ON `
+  -DMPI_C_HEADER_DIR="$mpiInclude" `
+  -DMPI_C_LIB_NAMES=msmpi `
+  -DMPI_msmpi_LIBRARY="$mpiLibrary" `
+  -DMPIEXEC_EXECUTABLE="$mpiExec"
 cmake --build build-mpi --config Release
 ```
 
