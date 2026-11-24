@@ -1,0 +1,13 @@
+# CMake / Visual Studio build output
+/build/
+/build-*/
+
+# Generated test and benchmark payloads
+/results/*.bin
+/results/*.enc
+/results/*.dec
+
+# Small local smoke-test measurements; replace with report-ready runs if desired
+/results/cpu_kernel.csv
+/results/cpu_pipeline.csv
+/results/mpi_scaling_smoke.csv

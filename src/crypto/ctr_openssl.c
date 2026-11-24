@@ -52,7 +52,8 @@ c01_ctr_status c01_aes128_ctr_transform_omp(
     const unsigned char initial_counter[C01_AES_BLOCK_SIZE],
     const unsigned char *input, unsigned char *output, size_t length)
 {
-    size_t blocks, block;
+    size_t blocks;
+    int64_t block, omp_block_count;
     int failed = 0;
 
     if (key == NULL || initial_counter == NULL ||
@@ -60,6 +61,8 @@ c01_ctr_status c01_aes128_ctr_transform_omp(
         return C01_CTR_INVALID_ARGUMENT;
     blocks = length / C01_AES_BLOCK_SIZE + (length % C01_AES_BLOCK_SIZE != 0);
     if (!counter_range_fits(initial_counter, blocks)) return C01_CTR_COUNTER_OVERFLOW;
+    if (blocks > (size_t)INT64_MAX) return C01_CTR_INVALID_ARGUMENT;
+    omp_block_count = (int64_t)blocks;
     if (length == 0) return C01_CTR_OK;
 
     #pragma omp parallel reduction(|:failed)
@@ -71,15 +74,16 @@ c01_ctr_status c01_aes128_ctr_transform_omp(
         if (!local_failed && EVP_CIPHER_CTX_set_padding(ctx, 0) != 1) local_failed = 1;
 
         #pragma omp for schedule(static)
-        for (block = 0; block < blocks; ++block) {
+        for (block = 0; block < omp_block_count; ++block) {
             unsigned char ctr[16], stream[EVP_MAX_BLOCK_LENGTH];
             int written = 0;
-            size_t offset = block * C01_AES_BLOCK_SIZE;
+            size_t block_index = (size_t)block;
+            size_t offset = block_index * C01_AES_BLOCK_SIZE;
             size_t count = length - offset < C01_AES_BLOCK_SIZE
                                ? length - offset : C01_AES_BLOCK_SIZE;
             size_t i;
             if (local_failed) continue;
-            counter_at(initial_counter, block, ctr);
+            counter_at(initial_counter, block_index, ctr);
             if (EVP_EncryptUpdate(ctx, stream, &written, ctr, 16) != 1 || written != 16) {
                 local_failed = 1;
                 continue;

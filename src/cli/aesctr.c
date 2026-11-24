@@ -13,10 +13,17 @@ static int parse_hex(const char *s, uint8_t *out, size_t n)
     size_t i;
     if (strlen(s) != n * 2) return 0;
     for (i = 0; i < n; ++i) {
-        unsigned int x;
-        char tail;
-        if (sscanf(s + 2 * i, "%2x%c", &x, &tail) != 1) return 0;
-        out[i] = (uint8_t)x;
+        unsigned int hi, lo;
+        char a = s[2 * i], b = s[2 * i + 1];
+        if (a >= '0' && a <= '9') hi = (unsigned int)(a - '0');
+        else if (a >= 'a' && a <= 'f') hi = (unsigned int)(a - 'a' + 10);
+        else if (a >= 'A' && a <= 'F') hi = (unsigned int)(a - 'A' + 10);
+        else return 0;
+        if (b >= '0' && b <= '9') lo = (unsigned int)(b - '0');
+        else if (b >= 'a' && b <= 'f') lo = (unsigned int)(b - 'a' + 10);
+        else if (b >= 'A' && b <= 'F') lo = (unsigned int)(b - 'A' + 10);
+        else return 0;
+        out[i] = (uint8_t)((hi << 4) | lo);
     }
     return 1;
 }

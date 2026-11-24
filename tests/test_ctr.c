@@ -93,17 +93,32 @@ static int test_openmp_matches_serial(void)
 {
     unsigned char key[16], counter[16], input[4099], serial[4099], parallel[4099];
     size_t i;
+    c01_ctr_status serial_status, omp_status;
     if (!from_hex("2b7e151628aed2a6abf7158809cf4f3c", key, sizeof(key)) ||
         !from_hex("f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff", counter, sizeof(counter)))
         return 0;
     for (i = 0; i < sizeof(input); ++i) input[i] = (unsigned char)(i * 37u + 11u);
-    if (c01_aes128_ctr_transform(key, counter, input, serial, sizeof(input)) != C01_CTR_OK ||
-        c01_aes128_ctr_transform_omp(key, counter, input, parallel, sizeof(input)) != C01_CTR_OK ||
-        memcmp(serial, parallel, sizeof(serial)) != 0)
+    serial_status = c01_aes128_ctr_transform(key, counter, input, serial, sizeof(input));
+    omp_status = c01_aes128_ctr_transform_omp(key, counter, input, parallel, sizeof(input));
+    if (serial_status != C01_CTR_OK || omp_status != C01_CTR_OK) {
+        fprintf(stderr, "OpenMP comparison statuses: serial=%s omp=%s\n",
+                c01_ctr_status_string(serial_status), c01_ctr_status_string(omp_status));
         return 0;
-    return c01_aes128_ctr_transform_omp(key, counter, parallel, parallel, sizeof(parallel)) == C01_CTR_OK &&
-           c01_aes128_ctr_transform(key, counter, parallel, serial, sizeof(serial)) == C01_CTR_OK &&
-           memcmp(serial, input, sizeof(input)) == 0;
+    }
+    if (memcmp(serial, parallel, sizeof(serial)) != 0) {
+        fprintf(stderr, "OpenMP differs from serial output\n");
+        return 0;
+    }
+    omp_status = c01_aes128_ctr_transform_omp(key, counter, parallel, parallel, sizeof(parallel));
+    if (omp_status != C01_CTR_OK) {
+        fprintf(stderr, "OpenMP in-place decrypt status: %s\n", c01_ctr_status_string(omp_status));
+        return 0;
+    }
+    if (memcmp(parallel, input, sizeof(input)) != 0) {
+        fprintf(stderr, "OpenMP in-place round-trip did not recover input\n");
+        return 0;
+    }
+    return 1;
 }
 
 int main(void)
