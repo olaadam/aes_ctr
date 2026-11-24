@@ -18,6 +18,16 @@ target_link_libraries(c01_ctr PUBLIC OpenSSL::Crypto OpenMP::OpenMP_C)
 add_executable(aesctr src/cli/aesctr.c)
 target_link_libraries(aesctr PRIVATE c01_ctr)
 
+add_executable(bench_cpu bench/bench_cpu.c)
+target_link_libraries(bench_cpu PRIVATE c01_ctr)
+
+option(C01_ENABLE_MPI "Build the MPI file-processing backend" OFF)
+if(C01_ENABLE_MPI)
+    find_package(MPI REQUIRED COMPONENTS C)
+    add_executable(aesctr_mpi src/mpi/aesctr_mpi.c)
+    target_link_libraries(aesctr_mpi PRIVATE c01_ctr MPI::MPI_C)
+endif()
+
 include(CTest)
 if(BUILD_TESTING)
     add_executable(test_ctr tests/test_ctr.c)
