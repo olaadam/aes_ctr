@@ -6,7 +6,20 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef enum { MODE_SERIAL, MODE_OMP } cpu_mode;
+#ifdef C01_HAVE_GPU
+#include "c01/gpu.h"
+#endif
+
+#ifdef _WIN32
+#include <malloc.h>
+static void *buf_alloc(size_t n) { return _aligned_malloc(n, 4096); }
+static void buf_free(void *p) { _aligned_free(p); }
+#else
+static void *buf_alloc(size_t n) { return aligned_alloc(4096, (n + 4095) / 4096 * 4096); }
+static void buf_free(void *p) { free(p); }
+#endif
+
+typedef enum { MODE_SERIAL, MODE_OMP, MODE_GPU } cpu_mode;
 
 static int parse_hex(const char *s, uint8_t *out, size_t n)
 {
@@ -55,13 +68,13 @@ static int add_blocks(const uint8_t start[16], size_t blocks, uint8_t result[16]
 static void usage(FILE *f)
 {
     fprintf(f, "Usage: aesctr <in> <out> --key <32-hex> --ctr <32-hex> "
-               "--buf <bytes> --mode {serial|omp|mpi|gpu}\n");
+               "--buf <bytes> --mode {serial|omp|mpi|gpu} [--gpu-mem {copy|zerocopy}]\n");
 }
 
 int main(int argc, char **argv)
 {
     const char *input_path, *output_path, *key_hex = NULL, *ctr_hex = NULL;
-    const char *mode = NULL;
+    const char *mode = NULL, *gpu_mem = "copy";
     uint8_t key[16], ctr0[16], ctr[16];
     size_t buffer_size = 0, chunk_capacity;
     cpu_mode selected;
@@ -71,6 +84,10 @@ int main(int argc, char **argv)
     int counter_exhausted = 0;
     int result = 1;
     int i;
+#ifdef C01_HAVE_GPU
+    c01_gpu *gpu = NULL;
+    c01_gpu_mem gpu_mem_mode = C01_GPU_COPY;
+#endif
 
     if (argc < 3) { usage(stderr); return 2; }
     input_path = argv[1]; output_path = argv[2];
@@ -83,6 +100,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "Invalid --buf (expected positive byte count)\n"); return 2;
             }
         } else if (!strcmp(argv[i], "--mode")) mode = argv[++i];
+        else if (!strcmp(argv[i], "--gpu-mem")) gpu_mem = argv[++i];
         else { fprintf(stderr, "Unknown option: %s\n", argv[i]); usage(stderr); return 2; }
     }
     if (!key_hex || !ctr_hex || !mode || buffer_size < 16 ||
@@ -91,16 +109,29 @@ int main(int argc, char **argv)
     }
     if (!strcmp(mode, "serial")) selected = MODE_SERIAL;
     else if (!strcmp(mode, "omp")) selected = MODE_OMP;
+#ifdef C01_HAVE_GPU
+    else if (!strcmp(mode, "gpu")) selected = MODE_GPU;
+#endif
     else if (!strcmp(mode, "mpi") || !strcmp(mode, "gpu")) {
         fprintf(stderr, "Mode '%s' is not available in this CPU executable\n", mode); return 2;
     } else { fprintf(stderr, "Unknown mode: %s\n", mode); usage(stderr); return 2; }
+    if (strcmp(gpu_mem, "copy") && strcmp(gpu_mem, "zerocopy")) {
+        fprintf(stderr, "Invalid --gpu-mem (expected copy or zerocopy)\n"); return 2;
+    }
+#ifdef C01_HAVE_GPU
+    if (!strcmp(gpu_mem, "zerocopy")) gpu_mem_mode = C01_GPU_ZEROCOPY;
+    if (selected == MODE_GPU) {
+        gpu = c01_gpu_create();
+        if (!gpu) { fprintf(stderr, "No OpenCL GPU available\n"); return 5; }
+    }
+#endif
 
     input = fopen(input_path, "rb");
     if (!input) { perror(input_path); goto cleanup; }
     output = fopen(output_path, "wb");
     if (!output) { perror(output_path); goto cleanup; }
-    inbuf = (uint8_t *)malloc(buffer_size);
-    outbuf = (uint8_t *)malloc(buffer_size);
+    inbuf = (uint8_t *)buf_alloc(buffer_size);
+    outbuf = (uint8_t *)buf_alloc(buffer_size);
     if (!inbuf || !outbuf) { fprintf(stderr, "Cannot allocate requested buffer\n"); goto cleanup; }
     chunk_capacity = buffer_size - buffer_size % 16;
 
@@ -112,6 +143,10 @@ int main(int argc, char **argv)
         }
         if (selected == MODE_OMP)
             status = c01_aes128_ctr_transform_omp(key, ctr, inbuf, outbuf, n);
+#ifdef C01_HAVE_GPU
+        else if (selected == MODE_GPU)
+            status = c01_gpu_aes128_ctr_mem(gpu, key, ctr, 0, inbuf, outbuf, n, 0, gpu_mem_mode, NULL);
+#endif
         else
             status = c01_aes128_ctr_transform(key, ctr, inbuf, outbuf, n);
         if (status != C01_CTR_OK) {
@@ -131,7 +166,10 @@ int main(int argc, char **argv)
     result = 0;
 
 cleanup:
-    free(inbuf); free(outbuf);
+    buf_free(inbuf); buf_free(outbuf);
+#ifdef C01_HAVE_GPU
+    c01_gpu_destroy(gpu);
+#endif
     if (input) fclose(input);
     if (output && fclose(output) != 0) { perror("close output"); result = 1; }
     return result;

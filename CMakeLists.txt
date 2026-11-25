@@ -44,6 +44,9 @@ if(C01_ENABLE_GPU)
     target_compile_definitions(c01_gpu PRIVATE
         C01_GPU_KERNEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/backends/aes_ctr.cl")
 
+    target_link_libraries(aesctr PRIVATE c01_gpu)
+    target_compile_definitions(aesctr PRIVATE C01_HAVE_GPU)
+
     add_executable(bench_gpu bench/bench_gpu.c)
     target_link_libraries(bench_gpu PRIVATE c01_gpu c01_ctr)
 
