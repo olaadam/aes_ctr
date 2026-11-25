@@ -8,10 +8,17 @@
 
 typedef struct c01_gpu c01_gpu;
 
+typedef enum {
+    C01_GPU_COPY = 0,
+    C01_GPU_ZEROCOPY
+} c01_gpu_mem;
+
 typedef struct {
     double h2d;
     double kernel;
     double d2h;
+    int batches;
+    int zero_copy_batches;
 } c01_gpu_times;
 
 /* Tworzy kontekst OpenCL na pierwszym GPU i kompiluje jądro. NULL przy braku urządzenia. */
@@ -34,6 +41,25 @@ c01_ctr_status c01_gpu_aes128_ctr(
     unsigned char *output,
     size_t length,
     size_t batch,
+    c01_gpu_times *times);
+
+/*
+Jak wyżej, z wyborem sposobu przekazania danych:
+C01_GPU_COPY     - jawne kopiowanie do buforów GPU i z powrotem,
+C01_GPU_ZEROCOPY - bufory CL_MEM_USE_HOST_PTR na pamięci hosta, wynik odczytywany przez mapowanie.
+Prawdziwy zero-copy na Intel wymaga bufora wyrównanego do 4096 B; inaczej sterownik kopiuje po cichu
+(times->zero_copy_batches mówi, w ilu partiach mapowanie zwróciło wskaźnik hosta).
+*/
+c01_ctr_status c01_gpu_aes128_ctr_mem(
+    c01_gpu *gpu,
+    const unsigned char key[C01_AES128_KEY_SIZE],
+    const unsigned char initial_counter[C01_AES_BLOCK_SIZE],
+    uint64_t block_offset,
+    const unsigned char *input,
+    unsigned char *output,
+    size_t length,
+    size_t batch,
+    c01_gpu_mem mem,
     c01_gpu_times *times);
 
 #endif

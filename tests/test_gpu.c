@@ -57,6 +57,10 @@ static int same_as_openssl(c01_gpu *g, const unsigned char *key, const unsigned 
     ok = c01_aes128_ctr_transform(key, c, in, a, n) == C01_CTR_OK &&
          c01_gpu_aes128_ctr(g, key, ctr, block_offset, in, b, n, batch, NULL) == C01_CTR_OK &&
          memcmp(a, b, n) == 0;
+    memset(b, 0, n + 1);
+    ok = ok &&
+         c01_gpu_aes128_ctr_mem(g, key, ctr, block_offset, in, b, n, batch, C01_GPU_ZEROCOPY, NULL) == C01_CTR_OK &&
+         memcmp(a, b, n) == 0;
     free(in);
     free(a);
     free(b);
@@ -89,6 +93,8 @@ int main(void)
         "5ae4df3edbd5d35e5b4f09020db03eab1e031dda2fbe03d1792170a0f3009cee", ct);
     ok = c01_gpu_aes128_ctr(g, key, ctr, 0, pt, out, 64, 0, NULL) == C01_CTR_OK && memcmp(out, ct, 64) == 0;
     ok &= c01_gpu_aes128_ctr(g, key, ctr, 1, pt + 16, out, 48, 0, NULL) == C01_CTR_OK && memcmp(out, ct + 16, 48) == 0;
+    memset(out, 0, sizeof(out));
+    ok &= c01_gpu_aes128_ctr_mem(g, key, ctr, 0, pt, out, 64, 0, C01_GPU_ZEROCOPY, NULL) == C01_CTR_OK && memcmp(out, ct, 64) == 0;
     all &= report("T1 wektory NIST", ok);
 
     ok = 1;
@@ -106,6 +112,11 @@ int main(void)
         ok = c01_gpu_aes128_ctr(g, key, ctr, 0, in, enc, n, 65536, NULL) == C01_CTR_OK &&
              c01_gpu_aes128_ctr(g, key, ctr, 0, enc, dec, n, 65536, NULL) == C01_CTR_OK &&
              memcmp(in, dec, n) == 0;
+        ok = ok &&
+             c01_gpu_aes128_ctr_mem(g, key, ctr, 0, dec, dec, n, 65536, C01_GPU_ZEROCOPY, NULL) == C01_CTR_OK &&
+             memcmp(dec, enc, n) == 0 &&
+             c01_gpu_aes128_ctr_mem(g, key, ctr, 0, dec, dec, n, 65536, C01_GPU_ZEROCOPY, NULL) == C01_CTR_OK &&
+             memcmp(dec, in, n) == 0;
         free(in);
         free(enc);
         free(dec);

@@ -222,6 +222,22 @@ c01_ctr_status c01_gpu_aes128_ctr(
     size_t batch,
     c01_gpu_times *times)
 {
+    return c01_gpu_aes128_ctr_mem(g, key, initial_counter, block_offset, input, output,
+                                  length, batch, C01_GPU_COPY, times);
+}
+
+c01_ctr_status c01_gpu_aes128_ctr_mem(
+    c01_gpu *g,
+    const unsigned char key[C01_AES128_KEY_SIZE],
+    const unsigned char initial_counter[C01_AES_BLOCK_SIZE],
+    uint64_t block_offset,
+    const unsigned char *input,
+    unsigned char *output,
+    size_t length,
+    size_t batch,
+    c01_gpu_mem mem,
+    c01_gpu_times *times)
+{
     uint64_t hi, lo, nblocks, last_lo;
     cl_uint rk_words[44];
     cl_mem rk = NULL, d_in = NULL, d_out = NULL;
@@ -262,19 +278,36 @@ c01_ctr_status c01_gpu_aes128_ctr(
     expand_key(key, rk_words);
     rk = clCreateBuffer(g->context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(rk_words), rk_words, &err);
     if (err != CL_SUCCESS) goto cleanup;
-    d_in = clCreateBuffer(g->context, CL_MEM_READ_ONLY, cap, NULL, &err);
-    if (err != CL_SUCCESS) goto cleanup;
-    d_out = clCreateBuffer(g->context, CL_MEM_WRITE_ONLY, cap, NULL, &err);
-    if (err != CL_SUCCESS) goto cleanup;
+    if (mem == C01_GPU_COPY) {
+        d_in = clCreateBuffer(g->context, CL_MEM_READ_ONLY, cap, NULL, &err);
+        if (err != CL_SUCCESS) goto cleanup;
+        d_out = clCreateBuffer(g->context, CL_MEM_WRITE_ONLY, cap, NULL, &err);
+        if (err != CL_SUCCESS) goto cleanup;
+    }
 
     for (pos = 0; pos < length; pos += batch) {
         size_t m = length - pos < batch ? length - pos : batch;
         cl_ulong len_arg = m, off_arg = pos / 16, hi_arg = hi, lo_arg = lo;
         size_t global = ((m + 15) / 16 + LOCAL_SIZE - 1) / LOCAL_SIZE * LOCAL_SIZE;
         size_t local = LOCAL_SIZE;
-        cl_event ev[3];
+        cl_event ev[3] = {NULL, NULL, NULL};
+        int i;
 
-        err = clEnqueueWriteBuffer(g->queue, d_in, CL_FALSE, 0, m, input + pos, 0, NULL, &ev[0]);
+        if (mem == C01_GPU_COPY) {
+            err = clEnqueueWriteBuffer(g->queue, d_in, CL_FALSE, 0, m, input + pos, 0, NULL, &ev[0]);
+        } else if (input == output) {
+            d_in = clCreateBuffer(g->context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, m, output + pos, &err);
+            if (err == CL_SUCCESS) {
+                d_out = d_in;
+                clRetainMemObject(d_out);
+            }
+        } else {
+            d_in = clCreateBuffer(g->context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, m, (void *)(input + pos), &err);
+            if (err == CL_SUCCESS) {
+                d_out = clCreateBuffer(g->context, CL_MEM_WRITE_ONLY | CL_MEM_USE_HOST_PTR, m, output + pos, &err);
+            }
+        }
+        if (err != CL_SUCCESS) goto cleanup;
         err |= clSetKernelArg(g->kernel, 0, sizeof(cl_mem), &d_in);
         err |= clSetKernelArg(g->kernel, 1, sizeof(cl_mem), &d_out);
         err |= clSetKernelArg(g->kernel, 2, sizeof(cl_ulong), &len_arg);
@@ -285,17 +318,36 @@ c01_ctr_status c01_gpu_aes128_ctr(
         err |= clSetKernelArg(g->kernel, 7, sizeof(cl_mem), &g->te0);
         err |= clSetKernelArg(g->kernel, 8, sizeof(cl_mem), &g->sbox);
         err |= clEnqueueNDRangeKernel(g->queue, g->kernel, 1, NULL, &global, &local, 0, NULL, &ev[1]);
-        err |= clEnqueueReadBuffer(g->queue, d_out, CL_TRUE, 0, m, output + pos, 0, NULL, &ev[2]);
+        if (mem == C01_GPU_COPY) {
+            err |= clEnqueueReadBuffer(g->queue, d_out, CL_TRUE, 0, m, output + pos, 0, NULL, &ev[2]);
+        } else if (err == CL_SUCCESS) {
+            void *p = clEnqueueMapBuffer(g->queue, d_out, CL_TRUE, CL_MAP_READ, 0, m, 0, NULL, &ev[2], &err);
+            if (err == CL_SUCCESS) {
+                if (times != NULL && p == (void *)(output + pos)) {
+                    times->zero_copy_batches++;
+                }
+                err = clEnqueueUnmapMemObject(g->queue, d_out, p, 0, NULL, NULL);
+                err |= clFinish(g->queue);
+            }
+        }
         if (err != CL_SUCCESS) goto cleanup;
 
         if (times != NULL) {
-            times->h2d += event_seconds(ev[0]);
+            if (ev[0] != NULL) {
+                times->h2d += event_seconds(ev[0]);
+            }
             times->kernel += event_seconds(ev[1]);
             times->d2h += event_seconds(ev[2]);
+            times->batches++;
         }
-        clReleaseEvent(ev[0]);
-        clReleaseEvent(ev[1]);
-        clReleaseEvent(ev[2]);
+        for (i = 0; i < 3; ++i) {
+            if (ev[i] != NULL) clReleaseEvent(ev[i]);
+        }
+        if (mem == C01_GPU_ZEROCOPY) {
+            clReleaseMemObject(d_out);
+            clReleaseMemObject(d_in);
+            d_out = d_in = NULL;
+        }
     }
     status = C01_CTR_OK;
 
